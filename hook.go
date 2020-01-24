@@ -25,7 +25,7 @@ func receive_push() {
 	}
 
 	var messages []string
-	messages = append(messages, "#{irc_push_summary_message}: #{fmt_url url}")
+	messages = append(messages, fmt.Sprintf("%s: %s", irc_push_summary_message(), fmt_url(url)))
 	for i, commit := range distinct_commits {
 		if i >= 3 {
 			break
@@ -36,30 +36,30 @@ func receive_push() {
 }
 
 func receive_commit_comment() {
-	send_messages("#{irc_commit_comment_summary_message} #{fmt_url url}")
+	send_messages(fmt.Sprintf("%s %s", irc_commit_comment_summary_message(), fmt_url(url)))
 }
 
 func receive_pull_request() {
 	if strings.Contains(action, "open") || strings.Contains(action, "close") {
-		send_messages("#{irc_pull_request_summary_message} #{fmt_url url}")
+		send_messages(fmt.Sprintf("%s %s", irc_pull_request_summary_message(), fmt_url(url)))
 	}
 }
 
 func receive_pull_request_review_comment() {
-	send_messages("#{irc_pull_request_review_comment_summary_message} #{fmt_url url}")
+	send_messages(fmt.Sprintf("%s %s", irc_pull_request_review_comment_summary_message(), fmt_url(url)))
 }
 
 func receive_issues() {
 	if strings.Contains(action, "open") || strings.Contains(action, "close") {
-		send_messages("#{irc_issue_summary_message} #{fmt_url url}")
+		send_messages(fmt.Sprintf("%s %s", irc_issue_summary_message(), fmt_url(url)))
 	}
 }
 func receive_issue_comment() {
-	send_messages("#{irc_issue_comment_summary_message} #{fmt_url url}")
+	send_messages(fmt.Sprintf("%s %s", irc_issue_comment_summary_message(), fmt_url(url)))
 }
 
 func receive_gollum() {
-	send_messages("#{irc_gollum_summary_message} #{fmt_url summary_url}")
+	send_messages(fmt.Sprintf("%s %s", irc_gollum_summary_message(), fmt_url(summary_url)))
 }
 
 func send_messages(messages ...string) error {
@@ -111,7 +111,10 @@ func send_messages(messages ...string) error {
 				// NickServ responded somehow.
 				break
 			} else if regexp.MatchString(`^PING\s*:\s*(.*)$`, line) {
-				irc_puts("PONG #{$1}")
+				re := regexp.MustCompile(`^PING\s*:\s*(.*)$`)
+				submatches := re.FindStringSubmatchIndex(line)
+				pong := re.Expand(nil, "$1", line, submatches)
+				irc_printf("PONG %s", pong)
 			}
 		}
 	}
@@ -181,16 +184,16 @@ func irc_puts(command) {
 	writable_irc.puts(command)
 }
 
-func irc_realname() {
+func irc_realname() string {
 	repo_name := payload["repository"]["name"]
 	repo_private := payload["repository"]["private"]
 	if repo_private {
-		return "GitHub IRCBot - #{repo_owner}/#{repo_name}"
+		return fmt.Sprintf("GitHub IRCBot - %s/%s", repo_owner, repo_name)
 	}
-	return "GitHub IRCBot - #{repo_owner}"
+	return fmt.Sprintf("GitHub IRCBot - %s", repo_owner)
 }
 
-func repo_owner() {
+func repo_owner() string {
 	// for (what I presume to be) legacy reasonings, some events send owner login,
 	// others send owner name. this method accounts for both cases.
 	// sample: push event returns owner name, pull request event returns owner login
@@ -201,12 +204,12 @@ func repo_owner() {
 	}
 }
 
-func debug_outgoing(command) {
-	irc_debug_log << ">> #{command.strip}"
+func debug_outgoing(command string) {
+	irc_debug_log << fmt.Sprintf(">> %s", strings.TrimSpace(command))
 }
 
-func debug_incoming(command) {
-	irc_debug_log << "=> #{command.strip}"
+func debug_incoming(command string) {
+	irc_debug_log << fmt.Sprintf("=> %s", strings.TrimSpace(command))
 }
 
 func irc_debug_log() {
@@ -215,7 +218,7 @@ func irc_debug_log() {
 
 func emit_debug_log() {
 	if len(irc_debug_log) > 0 {
-		receive_remote_call("IRC Log:\n#{irc_debug_log.join('\n')}")
+		receive_remote_call("IRC Log:\n" + strings.Join(irc_debug_log, "\n"))
 	}
 }
 
@@ -295,7 +298,7 @@ func plural(n int, singular, plural string) string {
 	}
 }
 
-func irc_push_summary_message() {
+func irc_push_summary_message() string {
 	var b bytes.Buffer
 	fmt.Printf(&b, "[%v] %v", fmt_repo(repo_name), fmt_name(pusher_name))
 
@@ -321,16 +324,16 @@ func irc_push_summary_message() {
 		}
 
 	} else if deleted {
-		fmt.Fprintf(&b, " \00304deleted\017 #{fmt_branch branch_name} at #{fmt_hash before_sha}")
+		fmt.Fprintf(&b, " \00304deleted\017 %s} at %s", fmt_branch(branch_name), fmt_hash(before_sha))
 
 	} else if forced {
-		fmt.Fprintf(&b, " \00304force-pushed\017 #{fmt_branch branch_name} from #{fmt_hash before_sha} to #{fmt_hash after_sha}")
+		fmt.Fprintf(&b, " \00304force-pushed\017 %s from %s to %s", fmt_branch(branch_name), fmt_hash(before_sha), fmt_hash(after_sha))
 
 	} else if commits.any && distinct_commits.empty {
 		if base_ref {
-			fmt.Fprintf(&b, " merged #{fmt_branch base_ref_name} into #{fmt_branch branch_name}")
+			fmt.Fprintf(&b, " merged %s into %s", fmt_branch(base_ref_name), fmt_branch(branch_name))
 		} else {
-			fmt.Fprintf(&b, " fast-forwarded #{fmt_branch branch_name} from #{fmt_hash before_sha} to #{fmt_hash after_sha}")
+			fmt.Fprintf(&b, " fast-forwarded %s from %s to %s", fmt_branch(branch_name), fmt_hash(before_sha), fmt_hash(after_sha))
 		}
 
 	} else {
@@ -356,23 +359,23 @@ func irc_format_commit_message(commit) {
 	sha1 := commit["id"]
 	files := commit["modified"]
 
-	return fmt.Sprintf("%v/%v %v %v: #{short}",
+	return fmt.Sprintf("%v/%v %v %v: %s",
 		fmt_repo(repo_name), fmt_branch(branch_name), fmt_hash(sha1[0:7]), fmt_name(author), short)
 }
 
-func irc_issue_summary_message() {
-	return "[#{fmt_repo repo.name}] #{fmt_name sender.login} #{action} issue \\##{issue.number}: #{issue.title}"
+func irc_issue_summary_message() string {
+	return fmt.Sprintf("[%s] %s %s issue #%d: %s", fmt_repo(repo.name), fmt_name(sender.login), action, issue.number, issue.title)
 }
 
-func irc_issue_comment_summary_message() {
-	short = firstLineOf(comment.body)
-	return "[#{fmt_repo repo.name}] #{fmt_name sender.login} commented on issue \\##{issue.number}: #{short}"
+func irc_issue_comment_summary_message() string {
+	short := firstLineOf(comment.body)
+	return fmt.Sprintf("[%s] %s commented on issue #%d: %s", fmt_repo(repo.name), fmt_name(sender.logic), issue.number, short)
 }
 
 func irc_commit_comment_summary_message() string {
-	short = firstLineOf(comment.body)
-	sha1 = comment.commit_id
-	return "[#{fmt_repo repo.name}] #{fmt_name sender.login} commented on commit #{fmt_hash sha1[0:7]}: #{short}"
+	short := firstLineOf(comment.body)
+	sha1 := comment.commit_id
+	return fmt.Sprintf("[%s] %s commented on commit %s: %s", fmt_repo(repo.name), fmt_name(sender.login), fmt_hash(sha1[0:7]), short)
 }
 
 func irc_pull_request_summary_message() string {
@@ -397,8 +400,8 @@ func irc_pull_request_review_comment_summary_message() string {
 		fmt_repo(repo.name), fmt_name(sender.login), pull_request_number, fmt_hash(sha1[0:7]))
 }
 
-func irc_gollum_summary_message() {
-	summary_message
+func irc_gollum_summary_message() string {
+	return summary_message
 }
 
 func branchNameMatches() {
