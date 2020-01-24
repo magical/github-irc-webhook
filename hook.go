@@ -10,8 +10,8 @@ import (
 )
 
 type Service struct {
-	server, port, room, nick, branches                     string
-	room                                                   []string
+	server, Port, nick, branches                           string
+	Rooms                                                  []string
 	password, nickserv_password                            string
 	ssl, message_without_join, no_colors, long_url, notice bool
 	//white_list :server, :port, :room, :nick
@@ -248,31 +248,31 @@ func new_ssl_wrapper(socket) {
 	*/
 }
 
-func use_ssl() {
+func (data *Service) use_ssl() {
 	return data.ssl
 }
 
-func default_port() {
-	if use_ssl() {
+func (data *Service) default_port() int {
+	if data.use_ssl() {
 		return 6697
 	} else {
 		return 6667
 	}
 }
 
-func port() {
+func (data *Service) port() int {
 	port, err := strconv.ParseInt(data.Port, 10)
 	if err == nil && port > 0 {
 		return port
 	}
-	return default_port()
+	return data.default_port()
 }
 
 func url() {
-	if config_boolean_true("long_url") {
+	if data.long_url {
 		return summary_url
 	} else {
-		shorten_url(summary_url)
+		return shorten_url(summary_url)
 	}
 }
 
@@ -352,7 +352,7 @@ func firstLineOf(s string) string {
 	return s
 }
 
-func irc_format_commit_message(commit) {
+func irc_format_commit_message(commit) string {
 	short := firstLineOf(commit["message"])
 
 	author := commit["author"]["name"]
@@ -391,11 +391,11 @@ func irc_pull_request_summary_message() string {
 }
 
 func irc_pull_request_review_comment_summary_message() string {
-	short = comment.body.split("\r\n", 2).first.to_s
+	short := comment.body.split("\r\n", 2).first.to_s
 	if short != comment.body {
 		short += "..."
 	}
-	sha1 = comment.commit_id
+	sha1 := comment.commit_id
 	return fmt.Sprintf("[%v] %v commented on pull request #%v %v: %v",
 		fmt_repo(repo.name), fmt_name(sender.login), pull_request_number, fmt_hash(sha1[0:7]))
 }
@@ -404,7 +404,7 @@ func irc_gollum_summary_message() string {
 	return summary_message
 }
 
-func branchNameMatches() {
+func branchNameMatches() bool {
 	if strings.TrimSpace(data.Branches) == "" {
 		return true
 	}
