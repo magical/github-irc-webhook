@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Service struct {
@@ -413,5 +415,22 @@ func branchNameMatches() bool {
 		if branch_name == b {
 			return true
 		}
+	}
+}
+
+// Shortens the given URL with git.io.
+//
+// url - String URL to be shortened.
+//
+// Returns the String URL response from git.io.
+func shorten_url(url string) string {
+	c := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+	resp, err := c.PostForm("https://git.io", url.Values{"url": []string{url}})
+	if err == nil && resp.Status == 201 {
+		return resp.Header.Get("Location")
+	} else {
+		return url
 	}
 }
