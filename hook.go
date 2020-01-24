@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"math/rand"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 type Service struct {
 	server, port, room, nick, branches                     string
+	room                                                   []string
 	password, nickserv_password                            string
 	ssl, message_without_join, no_colors, long_url, notice bool
 	//white_list :server, :port, :room, :nick
@@ -29,7 +32,7 @@ func receive_push() {
 		}
 		messages = append(messages, irc_format_commit_message(commit))
 	}
-	send_messages(messages)
+	send_messages(messages...)
 }
 
 func receive_commit_comment() {
@@ -59,46 +62,48 @@ func receive_gollum() {
 	send_messages("#{irc_gollum_summary_message} #{fmt_url summary_url}")
 }
 
-func send_messages(messages ...string) {
-	if config_boolean_true("no_colors") {
+func send_messages(messages ...string) error {
+	if data.no_colors {
 		for i := range messages {
 			messages[i].gsub(`/\002|\017|\026|\037|\003\d{0,2}(?:,\d{1,2})?/`, "")
 		}
 	}
 
-	rooms = data["room"].to_s
-	if rooms.empty {
-		raise_config_error("No rooms: #{rooms.inspect}")
-		return
+	rooms := data.Rooms
+	if len(rooms) == 0 {
+		return fmt.Errorf("No rooms: %#v", rooms)
 	}
 
 	//XXX rooms   = rooms.gsub(",", " ").split(" ").map{|room| room[0].chr == "#" ? room : "##{room}"}
-	botname = data["nick"][0:16]
-	if data["nick"] == "" {
-		botname = "GitHub#{rand(200)}"
+	botname := data.Nick[0:17]
+	if data.Nick == "" {
+		botname = fmt.Sprint("GitHub", rand.Intn(200))
 	}
-	command = "NOTICE"
-	if config_boolean_true("notice") {
+	command := "NOTICE"
+	if data.Notice {
 		command = "PRIVMSG"
 	}
 
-	if data["password"] != "" {
-		irc_password("PASS", data["password"])
+	if data.Password != "" {
+		irc_password("PASS", data.Password)
 	}
-	irc_puts("NICK #{botname}")
-	irc_puts("USER #{botname} 8 * :#{irc_realname}")
+	irc_printf("NICK %s", botname)
+	irc_printf("USER %s 8 * :%s", botname, irc_realname)
 
 	for {
 		line := irc_gets()
-		if regexp.MatchString(` 00[1-4] `+regexp.QuoteMeta(botname)+` /`, line) {
+		if regexp.MatchString(` 00[1-4] `+regexp.QuoteMeta(botname)+` `, line) {
 			break
 		} else if regexp.MatchString(`^PING\s*:\s*(.*)$`, line) {
-			irc_puts("PONG #{$1}")
+			re := regexp.MustCompile(`^PING\s*:\s*(.*)$`)
+			submatches := re.FindStringSubmatchIndex(line)
+			pong := re.Expand(nil, "$1", line, submatches)
+			irc_printf("PONG %s", pong)
 		}
 	}
 
-	nickserv_password = data["nickserv_password"].to_s
-	if !nickserv_password.empty {
+	nickserv_password := data.NickservPassword
+	if nickserv_password != "" {
 		irc_password("PRIVMSG NICKSERV :IDENTIFY", nickserv_password)
 		for {
 			line := irc_gets()
@@ -111,25 +116,25 @@ func send_messages(messages ...string) {
 		}
 	}
 
-	without_join = config_boolean_true("message_without_join")
+	without_join := data.message_without_join
 	for _, room := range rooms {
-		room, pass = room.split("::")
+		room, pass = strings.Split(room, "::")
 		if !without_join {
-			irc_puts("JOIN #{room} #{pass}")
+			irc_printf("JOIN %s %s", room, pass)
 		}
 
 		for _, message := range messages {
-			irc_puts("#{command} #{room} :#{message}")
+			irc_printf("%s %s :%s", command, room, message)
 		}
 
 		if !without_join {
-			irc_puts("PART #{room}")
+			irc_printf("PART %s", room)
 		}
 	}
 
 	irc_puts("QUIT")
-	for !irc_eof {
-		irc_gets
+	for !irc_eof() {
+		irc_gets()
 	}
 	/*
 	  rescue SocketError => boom
@@ -150,9 +155,9 @@ func send_messages(messages ...string) {
 }
 
 func irc_gets() {
-	response = readable_irc.gets
+	response := readable_irc.ReadString('\n')
 	if response != "" {
-		debug_incoming(clean_string_for_json(response))
+		debug_incoming(response)
 	}
 	response
 }
@@ -161,9 +166,9 @@ func irc_eof() {
 	readable_irc.eof
 }
 
-func irc_password(command, password) {
-	real_command = "#{command} #{password}"
-	debug_command = "#{command} #{'*' * password.size}"
+func irc_password(command, password string) {
+	real_command := fmt.Sprintf("%s %s", command, password)
+	debug_command = fmt.Sprintf("%s %s", command, strings.Repeat("*", len(password)))
 	irc_puts_debug(real_command, debug_command)
 }
 
@@ -177,9 +182,8 @@ func irc_puts(command) {
 }
 
 func irc_realname() {
-	repo_name = payload["repository"]["name"]
-	repo_private = payload["repository"]["private"]
-
+	repo_name := payload["repository"]["name"]
+	repo_private := payload["repository"]["private"]
 	if repo_private {
 		return "GitHub IRCBot - #{repo_owner}/#{repo_name}"
 	}
@@ -242,11 +246,11 @@ func new_ssl_wrapper(socket) {
 }
 
 func use_ssl() {
-	config_boolean_true("ssl")
+	return data.ssl
 }
 
 func default_port() {
-	if use_ssl {
+	if use_ssl() {
 		return 6697
 	} else {
 		return 6667
@@ -254,11 +258,11 @@ func default_port() {
 }
 
 func port() {
-	p := data["port"].to_i
-	if p > 0 {
-		return p
+	port, err := strconv.ParseInt(data.Port, 10)
+	if err == nil && port > 0 {
+		return port
 	}
-	return default_port
+	return default_port()
 }
 
 func url() {
@@ -276,89 +280,84 @@ func url() {
 /// 8 yellow          9 light green   10 dark teal        11 light teal
 /// 12 light blue     13 light purple 14 dark gray        15 light gray
 
-func fmt_url(s) {
-	"\00302\037#{s}\017"
-}
+func fmt_url(s string) string    { return "\00302\037" + s + "\017" }
+func fmt_repo(s string) string   { return "\00313" + s + "\017" }
+func fmt_name(s string) string   { return "\00315" + s + "\017" }
+func fmt_branch(s string) string { return "\00306" + s + "\017" }
+func fmt_tag(s string) string    { return "\00306" + s + "\017" }
+func fmt_hash(s string) string   { return "\00314" + s + "\017" }
 
-func fmt_repo(s) {
-	"\00313#{s}\017"
-}
-
-func fmt_name(s) {
-	"\00315#{s}\017"
-}
-
-func fmt_branch(s) {
-	"\00306#{s}\017"
-}
-
-func fmt_tag(s) {
-	"\00306#{s}\017"
-}
-
-func fmt_hash(s) {
-	"\00314#{s}\017"
+func plural(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	} else {
+		return plural
+	}
 }
 
 func irc_push_summary_message() {
-	var message bytes.Buffer
-	fmt.Printf(&b, "[#{fmt_repo repo_name}] #{fmt_name pusher_name}")
+	var b bytes.Buffer
+	fmt.Printf(&b, "[%v] %v", fmt_repo(repo_name), fmt_name(pusher_name))
 
 	if created {
 		if tag {
-			fmt.Fprintf(&b, "tagged #{fmt_tag tag_name} at")
+			fmt.Fprintf(&b, " tagged %s at", fmt_tag(tag_name))
 			if base_ref {
-				fmt.Fprintf(&b, fmt_branch(base_ref_name))
+				fmt.Fprintf(&b, " %v", fmt_branch(base_ref_name))
 			} else {
-				fmt.Fprintf(&b, fmt_hash(after_sha))
+				fmt.Fprintf(&b, " %v", fmt_hash(after_sha))
 			}
 		} else {
-			fmt.Fprintf(&b, "created #{fmt_branch branch_name}")
+			fmt.Fprintf(&b, " created %s", fmt_branch(branch_name))
 
 			if base_ref {
-				fmt.Fprintf(&b, "from #{fmt_branch base_ref_name}")
+				fmt.Fprintf(&b, " from %s", fmt_branch(base_ref_name))
 			} else if distinct_commits.empty {
-				fmt.Fprintf(&b, "at #{fmt_hash after_sha}")
+				fmt.Fprintf(&b, " at %s", fmt_hash(after_sha))
 			}
 
-			num = distinct_commits.size
-			fmt.Fprintf(&b, "(+\002#{num}\017 new commit#{num != 1 ? 's' : ''})")
+			num := len(distinct_commits)
+			fmt.Fprintf(&b, " (+\002%d\017 new commit%s)", num, plural(num, "", "s"))
 		}
 
 	} else if deleted {
-		fmt.Fprintf(&b, "\00304deleted\017 #{fmt_branch branch_name} at #{fmt_hash before_sha}")
+		fmt.Fprintf(&b, " \00304deleted\017 #{fmt_branch branch_name} at #{fmt_hash before_sha}")
 
 	} else if forced {
-		fmt.Fprintf(&b, "\00304force-pushed\017 #{fmt_branch branch_name} from #{fmt_hash before_sha} to #{fmt_hash after_sha}")
+		fmt.Fprintf(&b, " \00304force-pushed\017 #{fmt_branch branch_name} from #{fmt_hash before_sha} to #{fmt_hash after_sha}")
 
 	} else if commits.any && distinct_commits.empty {
 		if base_ref {
-			fmt.Fprintf(&b, "merged #{fmt_branch base_ref_name} into #{fmt_branch branch_name}")
+			fmt.Fprintf(&b, " merged #{fmt_branch base_ref_name} into #{fmt_branch branch_name}")
 		} else {
-			fmt.Fprintf(&b, "fast-forwarded #{fmt_branch branch_name} from #{fmt_hash before_sha} to #{fmt_hash after_sha}")
+			fmt.Fprintf(&b, " fast-forwarded #{fmt_branch branch_name} from #{fmt_hash before_sha} to #{fmt_hash after_sha}")
 		}
 
 	} else {
 		num = distinct_commits.size
-		fmt.Fprintf(&b, "pushed \002#{num}\017 new commit#{num != 1 ? 's' : ''} to #{fmt_branch branch_name}")
+		fmt.Fprintf(&b, " pushed \002%d\017 new commit%s to %s", num, plural(num, "", "s"), fmt_branch(branch_name))
 	}
 
-	message.join(' ')
+	return b.String()
+}
+
+func firstLineOf(s string) string {
+	newline := strings.Index(s, "\n")
+	if newline >= 0 {
+		s = s[:newline] + "..."
+	}
+	return s
 }
 
 func irc_format_commit_message(commit) {
-	short = commit["message"].split("\n", 2).first.to_s
-	if short != commit["message"] {
-		short += "..."
-	}
+	short := firstLineOf(commit["message"])
 
-	author = commit["author"]["name"]
-	sha1 = commit["id"]
-	files = Array(commit["modified"])
-	//XXX dirs   = files.map { |file| File.dirname(file) }.uniq
+	author := commit["author"]["name"]
+	sha1 := commit["id"]
+	files := commit["modified"]
 
-	"#{fmt_repo repo_name}/#{fmt_branch branch_name} #{fmt_hash sha1[0..6]} " +
-		"#{fmt_name commit['author']['name']}: #{short}"
+	return fmt.Sprintf("%v/%v %v %v: #{short}",
+		fmt_repo(repo_name), fmt_branch(branch_name), fmt_hash(sha1[0:7]), fmt_name(author), short)
 }
 
 func irc_issue_summary_message() {
@@ -366,44 +365,36 @@ func irc_issue_summary_message() {
 }
 
 func irc_issue_comment_summary_message() {
-	short = comment.body.split("\r\n", 2).first.to_s
-	if short != comment.body {
-		short += "..."
-	}
+	short = firstLineOf(comment.body)
 	return "[#{fmt_repo repo.name}] #{fmt_name sender.login} commented on issue \\##{issue.number}: #{short}"
 }
 
-func irc_commit_comment_summary_message() {
-	short = comment.body.split("\r\n", 2).first.to_s
-	if short != comment.body {
-		short += "..."
-	}
+func irc_commit_comment_summary_message() string {
+	short = firstLineOf(comment.body)
 	sha1 = comment.commit_id
-	"[#{fmt_repo repo.name}] #{fmt_name sender.login} commented on commit #{fmt_hash sha1[0..6]}: #{short}"
+	return "[#{fmt_repo repo.name}] #{fmt_name sender.login} commented on commit #{fmt_hash sha1[0:7]}: #{short}"
 }
 
-func irc_pull_request_summary_message() {
-	base_ref = pull.base.label.split(":").last
-	head_ref = pull.head.label.split(":").last
-	head_label = head_ref
+func irc_pull_request_summary_message() string {
+	base_ref := pull.base.label.split(":").last
+	head_ref := pull.head.label.split(":").last
+	head_label := head_ref
 	if head_ref == base_ref {
 		pull.head.label
 	}
 
-	"[#{fmt_repo repo.name}] #{fmt_name sender.login} #{action} pull request " +
-		"\\##{pull.number}: #{pull.title} (#{fmt_branch base_ref}...#{fmt_branch head_ref})"
+	return fmt.Sprintf("[%v] %v %v pull request #%v: %v (%v...%v)",
+		fmt_repo(repo.name), fmt_name(sender.login), action, pull.number, pull.title, fmt_branch(base_ref), fmt_branch(head_ref))
 }
 
-func irc_pull_request_review_comment_summary_message() {
+func irc_pull_request_review_comment_summary_message() string {
 	short = comment.body.split("\r\n", 2).first.to_s
 	if short != comment.body {
 		short += "..."
 	}
 	sha1 = comment.commit_id
-	"[#{fmt_repo repo.name}] #{fmt_name sender.login} commented on pull request " +
-		"\\##{pull_request_number} #{fmt_hash sha1[0..6]}: #{short}"
-	rescue
-	raise_config_error("Unable to build message: #{$!.to_s}")
+	return fmt.Sprintf("[%v] %v commented on pull request #%v %v: %v",
+		fmt_repo(repo.name), fmt_name(sender.login), pull_request_number, fmt_hash(sha1[0:7]))
 }
 
 func irc_gollum_summary_message() {
@@ -411,13 +402,10 @@ func irc_gollum_summary_message() {
 }
 
 func branchNameMatches() {
-	if data["branches"] == nil {
+	if strings.TrimSpace(data.Branches) == "" {
 		return true
 	}
-	if strings.TrimSpace(data["branches"]) == "" {
-		return true
-	}
-	branches := strings.Split(data["branches"], ", ")
+	branches := strings.Split(data.Branches, ",")
 	for _, b := range branches {
 		if branch_name == b {
 			return true
