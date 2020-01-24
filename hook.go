@@ -315,7 +315,7 @@ func irc_push_summary_message() string {
 
 			if base_ref {
 				fmt.Fprintf(&b, " from %s", fmt_branch(base_ref_name))
-			} else if distinct_commits.empty {
+			} else if len(distinct_commits) == 0 {
 				fmt.Fprintf(&b, " at %s", fmt_hash(after_sha))
 			}
 
@@ -329,7 +329,7 @@ func irc_push_summary_message() string {
 	} else if forced {
 		fmt.Fprintf(&b, " \00304force-pushed\017 %s from %s to %s", fmt_branch(branch_name), fmt_hash(before_sha), fmt_hash(after_sha))
 
-	} else if commits.any && distinct_commits.empty {
+	} else if commits.any && len(distinct_commits) == 0 {
 		if base_ref {
 			fmt.Fprintf(&b, " merged %s into %s", fmt_branch(base_ref_name), fmt_branch(branch_name))
 		} else {
@@ -337,7 +337,7 @@ func irc_push_summary_message() string {
 		}
 
 	} else {
-		num = distinct_commits.size
+		num := len(distinct_commits)
 		fmt.Fprintf(&b, " pushed \002%d\017 new commit%s to %s", num, plural(num, "", "s"), fmt_branch(branch_name))
 	}
 
