@@ -20,6 +20,8 @@ const secretSize = 256 / 8
 
 var secretSizeBase64 = base64.StdEncoding.EncodedLen(secretSize)
 
+var botLog = log.New(os.Stderr, "[bot] ", log.LstdFlags)
+
 func main() {
 	ircUrl := flag.String("irc", "", "irc server url (including nick and channel)")
 	debugFlag := flag.Bool("debug", false, "print debug logs")
@@ -107,18 +109,18 @@ func run(secret []byte, ircUrl string, debug bool) {
 func reportEvent(irc *IRC, eventType string, body []byte) {
 	gh, err := ParseGithubEvent(body)
 	if err != nil {
-		log.Printf("error parsing %s event: %v", eventType, err)
-		log.Printf("payload body: %q", body)
+		botLog.Printf("error parsing %s event: %v", eventType, err)
+		botLog.Printf("payload body: %q", body)
 		return
 	}
 	msg := FormatGithubEvent(eventType, gh, nil)
 	if msg == "" {
-		log.Printf("ignoring %s event", eventType)
+		botLog.Printf("ignoring %s event", eventType)
 		return
 	}
 	err = irc.Announce(msg)
 	if err != nil {
-		log.Printf("error sending message for %s event: %v", eventType, err)
+		botLog.Printf("error sending message for %s event: %v", eventType, err)
 		return
 	}
 }
