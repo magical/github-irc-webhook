@@ -37,43 +37,43 @@ const apache = "2/Jan/2006:15:04:05 -0700"
 func (h *Webhook) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
-	h.Logger.Printf("%v - - [%v] %q", req.RemoteAddr, time.Now().Format(apache), fmt.Sprintln(req.Method, req.RequestURI, req.Proto))
-	h.Logger.Printf("Headers: %v", req.Header)
+	h.logf("%v - - [%v] %q", req.RemoteAddr, time.Now().Format(apache), fmt.Sprintln(req.Method, req.RequestURI, req.Proto))
+	h.logf("Headers: %v", req.Header)
 	event := req.Header.Get("X-GitHub-Event")
 	if event == "" {
-		h.Logger.Printf("received request with no X-GitHub-Event header")
+		h.logf("received request with no X-GitHub-Event header")
 		http.Error(w, "error: missing event header", http.StatusBadRequest)
 		return
 	}
-	h.Logger.Printf("Event: %q", event)
+	h.logf("Event: %q", event)
 
 	// check the payload signature
 	sig := req.Header.Get("X-Hub-Signature")
 	if sig == "" {
-		h.Logger.Printf("received %q event with no X-Hub-Signature header", event)
+		h.logf("received %q event with no X-Hub-Signature header", event)
 		http.Error(w, "error: no signature", http.StatusForbidden)
 		return
 	}
 	if !strings.HasPrefix(sig, "sha1=") {
-		h.Logger.Println("malformed signature or unsupported hash function")
+		h.logf("malformed signature or unsupported hash function")
 		http.Error(w, "error: malformed signature", http.StatusForbidden)
 		return
 	}
 	sigBytes, err := hex.DecodeString(strings.TrimPrefix(sig, "sha1="))
 	if err != nil {
-		h.Logger.Printf("malformed signature: %v", err)
+		h.logf("malformed signature: %v", err)
 		http.Error(w, "error: malformed signature", http.StatusForbidden)
 		return
 	}
 	if len(sigBytes) != sha1.Size {
-		h.Logger.Println("malformed signature: too short/long")
+		h.logf("malformed signature: too short/long")
 		http.Error(w, "error: malformed signature", http.StatusForbidden)
 		return
 	}
 
 	body, err := ioutil.ReadAll(req.Body)
 	if err != nil {
-		h.Logger.Println("error reading body")
+		h.logf("error reading body")
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -84,12 +84,20 @@ func (h *Webhook) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	mac := hmac.New(sha1.New, h.Secret)
 	mac.Write(body)
 	if !hmac.Equal(sigBytes, mac.Sum(nil)) {
-		h.Logger.Printf("received %q event with invalid signature", event)
+		h.logf("received %q event with invalid signature", event)
 		http.Error(w, "error: bad signature request", http.StatusForbidden)
 		return
 	}
 
 	if h.Handler != nil {
 		h.Handler(event, body)
+	}
+}
+
+func (h *Webhook) logf(format string, v ...interface{}) {
+	if h.Logger != nil {
+		h.Logger.Printf(format, v...)
+	} else {
+		log.Printf(format, v...)
 	}
 }
