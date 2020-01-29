@@ -62,10 +62,11 @@ type GHSender struct {
 }
 
 type GHRepository struct {
-	Name    string
-	Private bool
-	Owner   GHOwner
-	URL     string
+	Name     string
+	FullName string `json:"full_name"`
+	Private  bool
+	Owner    GHOwner
+	URL      string
 	// ...
 }
 

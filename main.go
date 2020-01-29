@@ -115,7 +115,11 @@ func reportEvent(irc *IRC, eventType string, body []byte) {
 	}
 	msg := FormatGithubEvent(eventType, gh, nil)
 	if msg == "" {
-		botLog.Printf("ignoring %s event", eventType)
+		repo := "unknown repo"
+		if gh.Repository.FullName != "" {
+			repo = gh.Repository.FullName
+		}
+		botLog.Printf("ignoring %s event for %s", eventType, repo)
 		return
 	}
 	err = irc.Announce(msg)
