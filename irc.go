@@ -113,7 +113,6 @@ func (c *IRC) runLoop() error {
 		}
 
 		if m.Command == "PING" {
-			c.log.Println("ping")
 			m.Command = "PONG"
 			c.conn.Encode(m)
 		} else {
