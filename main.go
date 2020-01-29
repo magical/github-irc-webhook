@@ -22,6 +22,7 @@ var secretSizeBase64 = base64.StdEncoding.EncodedLen(secretSize)
 
 func main() {
 	ircUrl := flag.String("irc", "", "irc server url (including nick and channel)")
+	debugFlag := flag.Bool("debug", false, "print debug logs")
 	flag.Parse()
 
 	if *ircUrl == "" {
@@ -49,10 +50,10 @@ func main() {
 		log.Fatalf("error: server secret is not the expected size; want %d found %d", secretSizeBase64, len(secret))
 	}
 
-	run(secret, *ircUrl)
+	run(secret, *ircUrl, *debugFlag)
 }
 
-func run(secret []byte, ircUrl string) {
+func run(secret []byte, ircUrl string, debug bool) {
 	l, err := listen()
 	if err != nil {
 		log.Fatal(err)
@@ -62,7 +63,9 @@ func run(secret []byte, ircUrl string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	irc.SetLogger(log.New(os.Stderr, "[irc] ", log.LstdFlags))
+	if debug {
+		irc.SetLogger(log.New(os.Stderr, "[irc] ", log.LstdFlags))
+	}
 
 	type githubEvent struct {
 		Type string
