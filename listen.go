@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -27,6 +28,10 @@ func listenfd() *os.File {
 func listen() (net.Listener, error) {
 	if f := listenfd(); f != nil {
 		return net.FileListener(f)
+	}
+
+	if strings.HasPrefix(*bind, "/") || strings.HasPrefix(*bind, ".") {
+		return net.Listen("unix", *bind)
 	}
 
 	return net.Listen("tcp", *bind)
