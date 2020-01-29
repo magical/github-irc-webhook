@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
@@ -37,15 +36,14 @@ const apache = "2/Jan/2006:15:04:05 -0700"
 func (h *Webhook) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer req.Body.Close()
 
-	h.logf("%v - - [%v] %q", req.RemoteAddr, time.Now().Format(apache), fmt.Sprintln(req.Method, req.RequestURI, req.Proto))
-	h.logf("Headers: %v", req.Header)
+	//h.logf("%v - - [%v] %q", req.RemoteAddr, time.Now().Format(apache), fmt.Sprintln(req.Method, req.RequestURI, req.Proto))
+
 	event := req.Header.Get("X-GitHub-Event")
 	if event == "" {
 		h.logf("received request with no X-GitHub-Event header")
 		http.Error(w, "error: missing event header", http.StatusBadRequest)
 		return
 	}
-	h.logf("Event: %q", event)
 
 	// check the payload signature
 	sig := req.Header.Get("X-Hub-Signature")
