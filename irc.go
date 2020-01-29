@@ -21,6 +21,7 @@ type IRC struct {
 
 // TODO: what to do upon disconnection?
 // TODO: set timeouts on connection?
+// TODO: keep track of nick changes
 
 func NewIRC(addr string, nick string) (*IRC, error) {
 	conn, err := irc.DialTLS(addr, nil)
@@ -68,11 +69,28 @@ func (c *IRC) handle(m *irc.Message) {
 	} else if m.Command == "PRIVMSG" && m.Trailing() == "!quit" {
 		io.WriteString(c.conn, "QUIT")
 	} else if m.Command == "PRIVMSG" {
-		c.send(&irc.Message{
-			Command: "PRIVMSG",
-			Params:  []string{c.channel, m.Trailing()},
-		})
+		if isDirectedAt(m, c.nick) {
+			c.reply(m, "beep boop")
+		}
 	}
+}
+
+func isDirectedAt(m *irc.Message, nick string) bool {
+	return m.Params[0] == nick || strings.HasPrefix(m.Trailing(), nick+": ")
+}
+
+func (c *IRC) reply(src *irc.Message, response string) error {
+	recipient := src.Params[0]
+	if recipient == c.nick {
+		if src.Prefix == nil {
+			return nil
+		}
+		recipient = src.Prefix.Name
+	}
+	return c.send(&irc.Message{
+		Command: "PRIVMSG",
+		Params:  []string{recipient, response},
+	})
 }
 
 func (c *IRC) send(m *irc.Message) error {
