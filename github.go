@@ -241,6 +241,13 @@ func receive_issues(event *GHEvent, cfg *EventFormatterOptions) string {
 	return ""
 }
 func receive_issue_comment(event *GHEvent, cfg *EventFormatterOptions) string {
+	action := event.Action
+	if action == "edited" {
+		// TODO: only ignore edits for a short window after the comment was created?
+		// so if someone immediately fixes a typo we won't get a duplicate notification,
+		// but if they go back a week later and change something we will
+		return ""
+	}
 	summary_message := irc_issue_comment_summary_message(event)
 	summary_url := cfg.maybe_shorten(irc_issue_comment_summary_url(event))
 	return fmt.Sprintf("%s %s", summary_message, fmt_url(summary_url))
