@@ -31,7 +31,12 @@ func listen() (net.Listener, error) {
 	}
 
 	if strings.HasPrefix(*bind, "/") || strings.HasPrefix(*bind, ".") {
-		return net.Listen("unix", *bind)
+		ln, err := net.Listen("unix", *bind)
+		if err != nil {
+			return ln, err
+		}
+		os.Chmod(*bind, 0777)
+		return ln, err
 	}
 
 	return net.Listen("tcp", *bind)
